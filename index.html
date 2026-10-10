@@ -1,0 +1,1890 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>推箱子编辑器 · 最优解求解器</title>
+<style>
+  :root{
+    --bg:#12141a; --panel:#1a1d25; --panel2:#21252f; --line:#2c3140;
+    --ink:#e6eaf2; --dim:#8b93a7; --accent:#59ecff; --accent2:#2aa8c4;
+    --wall:#3d4658; --wallTop:#4d586d;
+    --goal:#f0a63a; --box:#c98a52; --boxOk:#49d38b; --bad:#ff6b6b; --ok:#49d38b;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.55 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; height:100vh; overflow:hidden;
+  }
+  header{
+    display:flex; align-items:center; gap:12px; padding:10px 16px;
+    border-bottom:1px solid var(--line); background:var(--panel); flex:0 0 auto;
+  }
+  header h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
+  header .tag{font-size:12px;color:var(--dim)}
+  header .grow{flex:1}
+
+  main{flex:1; display:flex; min-height:0}
+  .stage{flex:1; display:flex; flex-direction:column; min-width:0; min-height:0}
+  .canvas-wrap{
+    flex:1; overflow:auto; padding:16px; display:flex;
+    align-items:flex-start; justify-content:center;
+  }
+  canvas{border-radius:6px; box-shadow:0 6px 26px rgba(0,0,0,.45); cursor:crosshair; touch-action:none}
+
+  .playbar{
+    flex:0 0 auto; border-top:1px solid var(--line); background:var(--panel);
+    padding:8px 12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .playbar .sp{flex:1}
+  .scrub{flex:1 0 140px; min-width:120px; accent-color:var(--accent)}
+
+  aside{
+    width:392px; flex:0 0 392px; border-left:1px solid var(--line);
+    background:var(--panel); display:flex; flex-direction:column; min-height:0;
+  }
+  .panel-scroll{overflow:auto; padding:12px; display:flex; flex-direction:column; gap:14px}
+  .group{border:1px solid var(--line); border-radius:8px; background:var(--panel2); padding:10px}
+  .group > h2{
+    font-size:12px; text-transform:none; letter-spacing:.6px; color:var(--dim);
+    margin:0 0 8px; font-weight:600;
+  }
+
+  button{
+    font:inherit; color:var(--ink); background:#2b3140; border:1px solid var(--line);
+    border-radius:6px; padding:6px 11px; cursor:pointer; transition:.12s;
+  }
+  button:hover:not(:disabled){background:#353c4d; border-color:#3f4757}
+  button:disabled{opacity:.42; cursor:not-allowed}
+  button.primary{background:var(--accent2); border-color:var(--accent2); color:#052026; font-weight:600}
+  button.primary:hover:not(:disabled){background:#33c0e0}
+  button.danger{background:#5a2b2b; border-color:#7a3a3a}
+  button.sm{padding:4px 8px; font-size:13px}
+  .row{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+  .row.tight{gap:5px}
+
+  label.chk{display:inline-flex; align-items:center; gap:5px; cursor:pointer; user-select:none}
+  input[type=radio],input[type=checkbox]{accent-color:var(--accent)}
+
+  .tools{display:grid; grid-template-columns:repeat(3,1fr); gap:6px}
+  .tools button{display:flex; align-items:center; gap:6px; justify-content:center; padding:8px 4px}
+  .tools button.on{background:var(--accent2); border-color:var(--accent); color:#052026; font-weight:600}
+  .swatch{width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 auto}
+
+  textarea{
+    width:100%; min-height:104px; resize:vertical; background:#14171d; color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:8px; font:12.5px/1.5 Consolas,monospace;
+  }
+  .out{
+    font:13px/1.6 Consolas,monospace; background:#14171d; border:1px solid var(--line);
+    border-radius:6px; padding:8px; min-height:52px; word-break:break-all; max-height:180px; overflow:auto;
+    white-space:pre-wrap;
+  }
+  .out:empty::before{content:"（还没有解）"; color:var(--dim)}
+  input[type=number]{
+    width:62px; background:#14171d; color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:5px 7px; font:inherit;
+  }
+  .stats{display:grid; grid-template-columns:repeat(2,1fr); gap:6px 10px; font-size:12.5px}
+  .stats div{display:flex; justify-content:space-between; gap:8px; background:#1b1f28; border-radius:5px; padding:4px 8px}
+  .stats b{font-weight:600; color:var(--accent)}
+  .status{font-size:12.5px; color:var(--dim); min-height:19px}
+  .status.err{color:var(--bad)}
+  .status.ok{color:var(--ok)}
+  .hint{font-size:12px; color:var(--dim); line-height:1.5}
+  .bar{height:4px; background:#14171d; border-radius:3px; overflow:hidden; margin-top:7px}
+  .bar > i{display:block; height:100%; width:0; background:var(--accent); transition:width .15s}
+  @media (max-width:1000px){
+    main{flex-direction:column}
+    aside{width:auto;flex:0 0 auto;border-left:0;border-top:1px solid var(--line);max-height:52vh}
+    .canvas-wrap{min-height:34vh}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>推箱子编辑器 · 最优解求解器</h1>
+  <span class="tag">标准 Sokoban 记法 · 最短步数 / 最少推箱数</span>
+  <span class="grow"></span>
+  <span class="tag" id="modeTag"></span>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="canvas-wrap"><canvas id="board"></canvas></div>
+    <div class="playbar">
+      <button id="pbReset" class="sm" title="回到初始局面">⏮</button>
+      <button id="pbPrev"  class="sm" title="上一步">◀</button>
+      <button id="pbPlay"  class="sm primary" title="播放/暂停">▶ 播放</button>
+      <button id="pbNext"  class="sm" title="下一步">▶</button>
+      <button id="pbEnd"   class="sm" title="跳到最后">⏭</button>
+      <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" step="1">
+      <span class="tag" id="pbLabel">0 / 0</span>
+      <span class="tag">速度</span>
+      <input id="speed" type="range" min="1" max="30" value="7" step="1" style="width:90px">
+    </div>
+  </section>
+
+  <aside>
+    <div class="panel-scroll">
+
+      <div class="group">
+        <h2>画笔（左键绘制 / 右键擦除）</h2>
+        <div class="tools" id="tools">
+          <button data-tool="wall"   class="on"><i class="swatch" style="background:var(--wall)"></i>墙</button>
+          <button data-tool="goal"><i class="swatch" style="background:var(--goal)"></i>目标点</button>
+          <button data-tool="box"><i class="swatch" style="background:var(--box)"></i>箱子</button>
+          <button data-tool="player"><i class="swatch" style="background:var(--accent)"></i>人</button>
+          <button data-tool="floor"><i class="swatch" style="background:#14171d;border:1px solid #3a4150"></i>地板</button>
+          <button data-tool="erase"><i class="swatch" style="background:#3a2020"></i>清空</button>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <button id="undo" class="sm" title="Ctrl+Z">撤销</button>
+          <button id="redo" class="sm" title="Ctrl+Y">重做</button>
+          <span class="sp" style="flex:1"></span>
+          <button id="clear" class="sm danger">清空全部</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <span class="tag">网格</span>
+          <input id="gw" type="number" min="3" max="60" value="12">
+          <span class="tag">×</span>
+          <input id="gh" type="number" min="3" max="60" value="10">
+          <button id="applySize" class="sm">应用</button>
+          <span class="tag">格子</span>
+          <input id="cell" type="range" min="20" max="64" value="40" style="width:80px">
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>地图文本（# 墙　- 空　. 目标　$ 箱子　@ 人　* 箱在目标　+ 人在目标）</h2>
+        <textarea id="mapText" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="export" class="sm">生成地图文本</button>
+          <button id="load" class="sm">载入地图文本</button>
+          <button id="copyMap" class="sm">复制</button>
+          <button id="trim" class="sm">按内容裁剪网格</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <span class="tag">示例</span>
+          <select id="example" style="flex:1;background:#14171d;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px"></select>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>求解</h2>
+        <div class="row">
+          <label class="chk"><input type="radio" name="mode" value="moves" checked>最少步数</label>
+          <label class="chk"><input type="radio" name="mode" value="pushes">最少推箱数</label>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <button id="solve" class="primary">开始求解</button>
+          <button id="cancel" disabled>中止</button>
+        </div>
+        <div class="bar"><i id="solveBar"></i></div>
+        <div class="status" id="solveStatus">等待破解</div>
+      </div>
+
+      <div class="group">
+        <h2>解题过程（自然语言）</h2>
+        <div class="out" id="desc" style="max-height:280px"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="copyDesc" class="sm primary">复制解题过程</button>
+          <span class="tag">编号顺序</span>
+          <select id="order" style="background:#14171d;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px">
+            <option value="row">从左到右、从上到下</option>
+            <option value="col">从左到右（按列）</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>不存在更短路线的原因</h2>
+        <div class="out" id="optimality" style="max-height:320px"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="copyOptimality" class="sm primary">复制不存在更短路线的原因</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>走法字母串（大写 = 这一步推动了箱子）</h2>
+        <div class="out" id="answer"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="copyAnswer" class="sm">复制走法</button>
+          <button id="toMoves" class="sm">用当前解填充地图文本</button>
+        </div>
+        <div class="stats" style="margin-top:9px">
+          <div><span>步数</span><b id="stMoves">–</b></div>
+          <div><span>推箱</span><b id="stPushes">–</b></div>
+          <div><span>搜索节点</span><b id="stNodes">–</b></div>
+          <div><span>耗时</span><b id="stTime">–</b></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>操作说明</h2>
+        <div class="hint">
+          · 方向键可以直接走小人（编辑时）。<br>
+          · 求解在后台分帧运行，界面保持可操作，也可随时中止。<br>
+          · 两种模式都是<b>最优解</b>：一个最少步数，一个最少推箱数。<br>
+          · 推箱模式下空走不计入代价，但仍然会还原成完整走法。
+        </div>
+      </div>
+
+    </div>
+  </aside>
+</main>
+
+<!-- solver.js 内联于此，由 build-standalone.js 生成 -->
+<script>
+/*
+ * solver.js — Sokoban (推箱子) solver core
+ *
+ * 支持两种最优性：
+ *   - "moves"  最少步数（每一步都算，包括空走）
+ *   - "pushes" 最少推箱数（空走不计入代价，但会还原成完整走法）
+ *
+ * 输出沿用经典 lurd 记法：小写 = 走路，大写 = 该步推动了箱子。
+ *
+ * 剪枝：
+ *   - 静态死角（从目标点反向"拉箱"可达性分析）
+ *   - 推箱后的 2x2 冻结死锁
+ *
+ * 该文件同时可用于浏览器（挂到 window.PushboxSolver）和 Node（module.exports）。
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.PushboxSolver = factory();
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  // 方向约定与输出字符：0=左 1=上 2=右 3=下
+  var DX = [-1, 0, 1, 0];
+  var DY = [0, -1, 0, 1];
+  var DIR_CHAR = 'lurd';
+
+  var SYMBOLS = {
+    '#': { wall: true },
+    ' ': { floor: true },
+    '-': { floor: true },
+    '_': { floor: true },
+    '.': { floor: true, goal: true },
+    '$': { floor: true, box: true },
+    '*': { floor: true, goal: true, box: true },
+    '@': { floor: true, player: true },
+    '+': { floor: true, goal: true, player: true }
+  };
+
+  // ---------------------------------------------------------------- Level ----
+
+  function Level(w, h, walls, goals, boxes, player) {
+    this.w = w;
+    this.h = h;
+    this.n = w * h;
+    this.walls = walls;   // Uint8Array 1 = 墙
+    this.goals = goals;   // Uint8Array 1 = 目标点
+    this.boxes = boxes;   // number[] 已排序
+    this.player = player; // number
+    // 每格预存四个相邻格，搜索热循环无需反复做坐标换算。
+    this.neighbors = new Int32Array(this.n * 4);
+    for (var i = 0; i < this.n; i++) {
+      var x = i % w;
+      var y = (i - x) / w;
+      this.neighbors[i * 4] = x > 0 ? i - 1 : -1;
+      this.neighbors[i * 4 + 1] = y > 0 ? i - w : -1;
+      this.neighbors[i * 4 + 2] = x + 1 < w ? i + 1 : -1;
+      this.neighbors[i * 4 + 3] = y + 1 < h ? i + w : -1;
+    }
+  }
+
+  Level.prototype.idx = function (x, y) { return y * this.w + x; };
+
+  /** 沿方向 d 走一步；越界返回 -1 */
+  Level.prototype.step = function (idx, d, sign) {
+    if (idx < 0 || idx >= this.n || d < 0 || d > 3) return -1;
+    if (sign === -1) d = (d + 2) & 3;
+    return this.neighbors[idx * 4 + d];
+  };
+
+  Level.prototype.isFloor = function (idx) { return idx >= 0 && !this.walls[idx]; };
+
+  Level.prototype.clone = function () {
+    return new Level(this.w, this.h, this.walls, this.goals, this.boxes.slice(), this.player);
+  };
+
+  Level.prototype.toText = function () {
+    var out = [];
+    var boxSet = new Set(this.boxes);
+    for (var y = 0; y < this.h; y++) {
+      var row = '';
+      for (var x = 0; x < this.w; x++) {
+        var i = y * this.w + x;
+        if (this.walls[i]) { row += '#'; continue; }
+        var goal = !!this.goals[i];
+        var box = boxSet.has(i);
+        var player = this.player === i;
+        if (box && goal) row += '*';
+        else if (player && goal) row += '+';
+        else if (box) row += '$';
+        else if (player) row += '@';
+        else if (goal) row += '.';
+        else row += '-';
+      }
+      out.push(row);
+    }
+    return out.join('\n');
+  };
+
+  /**
+   * 解析地图文本。
+   * 行分隔符：换行 或 |（与参考实现一致，方便单行粘贴）
+   */
+  function parseLevel(text) {
+    if (typeof text !== 'string') throw new Error('地图必须是文本');
+    var t = text.replace(/\r\n?/g, '\n').trim();
+    if (!t) throw new Error('地图为空');
+
+    var lines = t.split(t.indexOf('|') !== -1 ? '|' : '\n');
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+    while (lines.length && lines[0].trim() === '') lines.shift();
+    if (!lines.length) throw new Error('地图为空');
+
+    var h = lines.length;
+    var w = 0;
+    for (var i = 0; i < h; i++) w = Math.max(w, lines[i].length);
+    if (w === 0) throw new Error('地图为空');
+
+    var walls = new Uint8Array(w * h);
+    var goals = new Uint8Array(w * h);
+    var boxes = [];
+    var player = -1;
+    var players = 0;
+
+    for (var y = 0; y < h; y++) {
+      var line = lines[y];
+      for (var x = 0; x < w; x++) {
+        var ch = x < line.length ? line[x] : ' ';
+        var spec = SYMBOLS[ch];
+        if (!spec) {
+          throw new Error('第 ' + (y + 1) + ' 行第 ' + (x + 1) + ' 列出现无法识别的字符「' + ch + '」');
+        }
+        var idx = y * w + x;
+        if (spec.wall) { walls[idx] = 1; continue; }
+        if (spec.goal) goals[idx] = 1;
+        if (spec.box) boxes.push(idx);
+        if (spec.player) { player = idx; players++; }
+      }
+    }
+
+    if (players === 0) throw new Error('地图里没有「人」(@)');
+    if (players > 1) throw new Error('地图里有 ' + players + ' 个「人」，只能有一个');
+    if (boxes.length === 0) throw new Error('地图里没有箱子($)');
+    if (boxes.length !== countGoals(goals)) {
+      throw new Error('箱子与目标点数量不符：箱子 ' + boxes.length + ' 个，目标点 ' + countGoals(goals) + ' 个');
+    }
+
+    boxes.sort(function (a, b) { return a - b; });
+    return new Level(w, h, walls, goals, boxes, player);
+  }
+
+  function countGoals(goals) {
+    var c = 0;
+    for (var i = 0; i < goals.length; i++) if (goals[i]) c++;
+    return c;
+  }
+
+  // --------------------------------------------------------- 预处理 / 剪枝 ----
+
+  /**
+   * 静态死角：从目标点反向"拉箱"做可达性传播。
+   * alive[i]=1 表示箱子在 i 仍有可能被推到某个目标点。
+   * 反过来 alive[i]=0 就是绝对死角，可以安全剪枝（不会误剪）。
+   */
+  function computeAlive(level) {
+    var n = level.n, alive = new Uint8Array(n), stack = [];
+    for (var i = 0; i < n; i++) {
+      if (level.goals[i]) { alive[i] = 1; stack.push(i); }
+    }
+    while (stack.length) {
+      var c = stack.pop();
+      for (var d = 0; d < 4; d++) {
+        var p = level.step(c, d, -1);            // 推之前箱子所在的格子
+        if (!level.isFloor(p)) continue;
+        var q = level.step(p, d, -1);            // 推之前人站立的格子
+        if (!level.isFloor(q)) continue;
+        if (!alive[p]) { alive[p] = 1; stack.push(p); }
+      }
+    }
+    for (var j = 0; j < n; j++) if (level.walls[j]) alive[j] = 0;
+    return alive;
+  }
+
+  /** 每个格子到最近目标点的距离（忽略箱子），用作 A* 的 h */
+  function computeDistToGoal(level) {
+    var n = level.n;
+    var dist = new Int32Array(n).fill(-1);
+    var queue = [];
+    for (var i = 0; i < n; i++) {
+      if (level.goals[i]) { dist[i] = 0; queue.push(i); }
+    }
+    for (var head = 0; head < queue.length; head++) {
+      var c = queue[head];
+      for (var d = 0; d < 4; d++) {
+        var nx = level.step(c, d);
+        if (nx < 0 || level.walls[nx] || dist[nx] !== -1) continue;
+        dist[nx] = dist[c] + 1;
+        queue.push(nx);
+      }
+    }
+    return dist;
+  }
+
+  /** 2x2 冻结死锁：以 cell 为中心的四个 2x2 方块 */
+  function isFrozenDeadlock(level, boxSet, cell) {
+    var w = level.w, h = level.h;
+    var x = cell % w;
+    var y = (cell - x) / w;
+    var offsets = [[-1, -1], [-1, 0], [0, -1], [0, 0]];
+    for (var k = 0; k < 4; k++) {
+      var bx = x + offsets[k][0];
+      var by = y + offsets[k][1];
+      if (bx < 0 || by < 0 || bx + 1 >= w || by + 1 >= h) continue;
+      var cells = [by * w + bx, by * w + bx + 1, (by + 1) * w + bx, (by + 1) * w + bx + 1];
+      var blocked = 0, hasGoal = false;
+      for (var m = 0; m < 4; m++) {
+        var c = cells[m];
+        if (level.walls[c] || boxSet.has(c)) {
+          blocked++;
+          if (level.goals[c]) hasGoal = true;
+        }
+      }
+      if (blocked === 4 && !hasGoal) return true;
+    }
+    return false;
+  }
+
+  // ------------------------------------------------------------- 可达性 ----
+
+  /** 人在不被箱子挡住的前提下能到达的格子集合 */
+  function reachable(level, from, boxSet) {
+    var seen = new Uint8Array(level.n);
+    var queue = [from];
+    seen[from] = 1;
+    for (var head = 0; head < queue.length; head++) {
+      var c = queue[head];
+      for (var d = 0; d < 4; d++) {
+        var nx = level.step(c, d);
+        if (nx < 0 || seen[nx] || level.walls[nx] || boxSet.has(nx)) continue;
+        seen[nx] = 1;
+        queue.push(nx);
+      }
+    }
+    return seen;
+  }
+
+  function reachableKey(level, from, boxSet) {
+    var seen = reachable(level, from, boxSet);
+    for (var i = 0; i < seen.length; i++) if (seen[i]) return i;
+    return from;
+  }
+
+  /** 从 from 走到 to 的方向序列（规避箱子），无路返回 null */
+  function bfsPath(level, from, to, boxSet) {
+    if (from === to) return [];
+    var prev = new Int32Array(level.n).fill(-2);
+    var prevDir = new Int8Array(level.n);
+    prev[from] = -1;
+    var queue = [from];
+    for (var head = 0; head < queue.length; head++) {
+      var c = queue[head];
+      for (var d = 0; d < 4; d++) {
+        var nx = level.step(c, d);
+        if (nx < 0 || prev[nx] !== -2 || level.walls[nx] || boxSet.has(nx)) continue;
+        prev[nx] = c;
+        prevDir[nx] = d;
+        if (nx === to) {
+          var path = [];
+          var cur = to;
+          while (cur !== from) { path.push(prevDir[cur]); cur = prev[cur]; }
+          path.reverse();
+          return path;
+        }
+        queue.push(nx);
+      }
+    }
+    return null;
+  }
+
+  // --------------------------------------------------------------- 堆 ----
+
+  function MinHeap(cmp) { this.a = []; this.cmp = cmp; }
+  MinHeap.prototype.size = function () { return this.a.length; };
+  MinHeap.prototype.push = function (v) {
+    var a = this.a;
+    a.push(v);
+    var i = a.length - 1;
+    while (i > 0) {
+      var p = (i - 1) >> 1;
+      if (this.cmp(a[i], a[p]) < 0) { var t = a[i]; a[i] = a[p]; a[p] = t; i = p; }
+      else break;
+    }
+  };
+  MinHeap.prototype.pop = function () {
+    var a = this.a;
+    if (!a.length) return undefined;
+    var top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last;
+      var i = 0;
+      for (;;) {
+        var l = 2 * i + 1, r = l + 1, s = i;
+        if (l < a.length && this.cmp(a[l], a[s]) < 0) s = l;
+        if (r < a.length && this.cmp(a[r], a[s]) < 0) s = r;
+        if (s === i) break;
+        var t = a[i]; a[i] = a[s]; a[s] = t; i = s;
+      }
+    }
+    return top;
+  };
+
+  // -------------------------------------------------------------- 求解 ----
+
+  function stateKey(player, boxes) { return player + '|' + boxes.join(','); }
+
+  function isSolved(level, boxes) {
+    for (var i = 0; i < boxes.length; i++) if (!level.goals[boxes[i]]) return false;
+    return true;
+  }
+
+  /** 走法序列 → 统计数据 + lurd 串 */
+  function encodeSolution(level, dirs, pushedFlags) {
+    var s = '';
+    var moves = dirs.length, pushes = 0;
+    for (var i = 0; i < dirs.length; i++) {
+      var ch = DIR_CHAR[dirs[i]];
+      if (pushedFlags[i]) { ch = ch.toUpperCase(); pushes++; }
+      s += ch;
+    }
+    return { moves: moves, pushes: pushes, text: s };
+  }
+
+  /**
+   * 求解迭代器。用 generator 以便浏览器分帧执行、随时取消。
+   * yield { explored, openSize, elapsed } 作为进度；return 结果对象。
+   */
+  function* solveIter(level, mode, options) {
+    options = options || {};
+    var maxNodes = options.maxNodes || 20000000;
+    var maxMillis = options.maxMillis || 60000;
+    var yieldEvery = options.yieldEvery || 2000;
+    var start = Date.now();
+
+    var alive = computeAlive(level);
+    var dist = computeDistToGoal(level);
+    var boxes0 = level.boxes.slice();
+
+    // 起始状态就踩在死角上
+    for (var b = 0; b < boxes0.length; b++) {
+      if (!alive[boxes0[b]]) {
+        return { ok: false, reason: 'unsolvable', message: '箱子初始位置就在死角上，无解' };
+      }
+    }
+    if (boxes0.some(function (c) { return dist[c] < 0; })) {
+      return { ok: false, reason: 'unsolvable', message: '有箱子被墙完全封死，无解' };
+    }
+
+    var root = mode === 'pushes'
+      ? {
+        key: stateKey(reachableKey(level, level.player, new Set(boxes0)), boxes0),
+        player: level.player, boxes: boxes0, g: 0,
+        h: boxes0.reduce(function (a, c) { return a + dist[c]; }, 0),
+        parent: null, pushDir: -1, pushed: false
+      }
+      : {
+        key: stateKey(level.player, boxes0),
+        player: level.player, boxes: boxes0, g: 0,
+        h: boxes0.reduce(function (a, c) { return a + dist[c]; }, 0),
+        parent: null, move: -1, pushed: false
+      };
+
+    if (isSolved(level, boxes0)) return finish(root, 0, start);
+
+    var open = new MinHeap(function (a, b) {
+      var fa = a.g + a.h, fb = b.g + b.h;
+      return fa !== fb ? fa - fb : b.g - a.g;   // 同分优先走更深的（更快见目标）
+    });
+    open.push(root);
+    var best = new Map();
+    best.set(root.key, 0);
+
+    var explored = 0;
+
+    while (open.size()) {
+      var node = open.pop();
+      if (node.g > (best.get(node.key) === undefined ? Infinity : best.get(node.key))) continue;
+
+      if (isSolved(level, node.boxes)) return finish(node, explored, start);
+
+      explored++;
+
+      if (mode === 'pushes') {
+        expandPushes(level, node, open, best, alive, dist);
+      } else {
+        expandMoves(level, node, open, best, alive, dist);
+      }
+
+      if (explored >= maxNodes) {
+        return { ok: false, reason: 'limit', message: '搜索节点超过上限 ' + maxNodes + '，未能找到解', explored: explored };
+      }
+      if ((explored % yieldEvery) === 0) {
+        if (Date.now() - start > maxMillis) {
+          return { ok: false, reason: 'timeout', message: '搜索超过 ' + Math.round(maxMillis / 1000) + ' 秒，未能找到解', explored: explored };
+        }
+        yield { explored: explored, openSize: open.size(), elapsed: Date.now() - start };
+      }
+    }
+
+    return { ok: false, reason: 'unsolvable', message: '无解', explored: explored };
+
+    // ---- 内部展开函数（闭包，避免传参开销） ----
+
+    function expandMoves(level, node, open, best, alive, dist) {
+      var boxSet = new Set(node.boxes);
+      for (var d = 0; d < 4; d++) {
+        var np = level.step(node.player, d);
+        if (np < 0 || level.walls[np]) continue;
+
+        var pushed = false;
+        var boxes = node.boxes;
+
+        if (boxSet.has(np)) {
+          var nd = level.step(np, d);
+          if (nd < 0 || level.walls[nd] || boxSet.has(nd)) continue;
+          if (!alive[nd]) continue;                       // 静态死角
+          boxes = node.boxes.slice();
+          var bi = boxes.indexOf(np);
+          boxes[bi] = nd;
+          boxes.sort(function (a, b) { return a - b; });
+          var nbSet = new Set(boxes);
+          if (isFrozenDeadlock(level, nbSet, nd)) continue;
+          boxSet = nbSet;
+          pushed = true;
+        }
+
+        var key = stateKey(np, boxes);
+        var g = node.g + 1;
+        var known = best.get(key);
+        if (known !== undefined && known <= g) continue;
+        best.set(key, g);
+
+        var h = 0;
+        for (var i = 0; i < boxes.length; i++) h += dist[boxes[i]];
+
+        open.push({ key: key, player: np, boxes: boxes, g: g, h: h, parent: node, move: d, pushed: pushed });
+
+        if (pushed) boxSet = new Set(node.boxes);          // 还原，供下一个方向使用
+      }
+    }
+
+    function expandPushes(level, node, open, best, alive, dist) {
+      var boxSet = new Set(node.boxes);
+      var region = reachable(level, node.player, boxSet);
+
+      for (var bi = 0; bi < node.boxes.length; bi++) {
+        var bpos = node.boxes[bi];
+        for (var d = 0; d < 4; d++) {
+          var stand = level.step(bpos, d, -1);            // 人推箱时站的位置
+          if (stand < 0 || level.walls[stand] || boxSet.has(stand)) continue;
+          if (!region[stand]) continue;                   // 人到不了，这一推不成立
+          var dest = level.step(bpos, d);
+          if (dest < 0 || level.walls[dest] || boxSet.has(dest)) continue;
+          if (!alive[dest]) continue;
+
+          var boxes = node.boxes.slice();
+          boxes[bi] = dest;
+          boxes.sort(function (a, b) { return a - b; });
+          var nbSet = new Set(boxes);
+          if (isFrozenDeadlock(level, nbSet, dest)) continue;
+
+          // 推完后人站在箱子原来的位置
+          var np = bpos;
+          var key = stateKey(reachableKey(level, np, nbSet), boxes);
+          var g = node.g + 1;
+          var known = best.get(key);
+          if (known !== undefined && known <= g) continue;
+          best.set(key, g);
+
+          var h = 0;
+          for (var i = 0; i < boxes.length; i++) h += dist[boxes[i]];
+
+          open.push({ key: key, player: np, boxes: boxes, g: g, h: h, parent: node, pushDir: d, pushed: true });
+        }
+      }
+    }
+
+    function finish(node, explored, start) {
+      var dirs = [], flags = [];
+      var cur = node;
+
+      if (mode === 'pushes') {
+        // 每个"段" = 走到推箱位置的空走 + 一次推箱。
+        // 必须按"段"倒序拼接，且段内保持正序：直接翻转拍平后的数组会把
+        // 每段内部的走法顺序也一起颠倒，产出无法回放的非法解。
+        var segments = [];
+        while (cur.parent) {
+          var p = cur.parent;
+          var d = cur.pushDir;
+          var stand = level.step(cur.player, d, -1);
+          var walk = bfsPath(level, p.player, stand, new Set(p.boxes));
+          if (walk === null) {
+            return { ok: false, reason: 'internal', message: '内部错误：还原走法时找不到路径' };
+          }
+          var seg = [];
+          for (var i = 0; i < walk.length; i++) seg.push([walk[i], false]);
+          seg.push([d, true]);
+          segments.push(seg);
+          cur = p;
+        }
+        for (var s = segments.length - 1; s >= 0; s--) {
+          for (var k = 0; k < segments[s].length; k++) {
+            dirs.push(segments[s][k][0]);
+            flags.push(segments[s][k][1]);
+          }
+        }
+      } else {
+        // 步数模式每段只有一步，整体翻转即可
+        while (cur.parent) {
+          dirs.push(cur.move); flags.push(cur.pushed);
+          cur = cur.parent;
+        }
+        dirs.reverse(); flags.reverse();
+      }
+
+      var enc = encodeSolution(level, dirs, flags);
+      return {
+        ok: true,
+        mode: mode,
+        solution: enc.text,
+        moves: enc.moves,
+        pushes: enc.pushes,
+        explored: explored,
+        elapsed: Date.now() - start
+      };
+    }
+  }
+
+  /** 同步求解（Node 测试 / 小关卡方便用） */
+  function solve(levelText, mode, options) {
+    var level = typeof levelText === 'string' ? parseLevel(levelText) : levelText;
+    var it = solveIter(level, mode || 'moves', options);
+    var r = it.next();
+    while (!r.done) r = it.next();
+    return r.value;
+  }
+
+  /** 回放一段解，返回最终局面 + 校验结果 */
+  function replay(levelText, solution) {
+    var level = typeof levelText === 'string' ? parseLevel(levelText) : levelText.clone();
+    var boxSet = new Set(level.boxes);
+    var player = level.player;
+    var boxes = level.boxes.slice();
+    var moves = 0, pushes = 0;
+    var steps = [{ player: player, boxes: boxes.slice(), dir: -1, pushed: false }];
+
+    for (var i = 0; i < solution.length; i++) {
+      var ch = solution[i];
+      var lower = ch.toLowerCase();
+      var d = DIR_CHAR.indexOf(lower);
+      if (d === -1) return { ok: false, message: '解里出现非法字符「' + ch + '」', at: i };
+      var expectPush = ch !== lower;
+      var np = level.step(player, d);
+      if (np < 0 || level.walls[np]) return { ok: false, message: '第 ' + (i + 1) + ' 步撞墙', at: i };
+
+      var pushed = false;
+      if (boxSet.has(np)) {
+        var nd = level.step(np, d);
+        if (nd < 0 || level.walls[nd] || boxSet.has(nd)) {
+          return { ok: false, message: '第 ' + (i + 1) + ' 步推不动箱子', at: i };
+        }
+        boxSet.delete(np); boxSet.add(nd);
+        var bi = boxes.indexOf(np);
+        boxes[bi] = nd;
+        pushed = true;
+      }
+      if (pushed !== expectPush) {
+        return { ok: false, message: '第 ' + (i + 1) + ' 步大小写与实际是否推箱不符', at: i };
+      }
+      player = np;
+      moves++;
+      if (pushed) pushes++;
+      steps.push({ player: player, boxes: boxes.slice(), dir: d, pushed: pushed });
+    }
+
+    var solved = true;
+    for (var k = 0; k < boxes.length; k++) if (!level.goals[boxes[k]]) { solved = false; break; }
+    return { ok: true, solved: solved, moves: moves, pushes: pushes, steps: steps };
+  }
+
+  /**
+   * 把 lurd 走法翻译成自然语言解题过程。
+   *
+   * 输出格式（坐标 1-based，左上角第一格为 (1,1)，x 向右增大，y 向下增大）：
+   *   玩家起始位于（3，7），向右移动1格后到达（4，7），
+   *   向上推动箱子2 1格后到达（4，6），…
+   *   向下推动箱子1 1格后到达目标点3。
+   *
+   * 规则：
+   *   - 连续同方向、同性质的走法合并成一段，用"N格"表示；
+   *   - 推箱段标出被推的是第几个箱子（箱子按初始位置从上到下、从左到右编号）；
+   *   - 推箱段结束时若箱子落在目标点上，改说"到达目标点M"（目标点同样按位置编号），
+   *     否则报出玩家走完这一段后的坐标。
+   */
+  var DIR_WORD = ['向左', '向上', '向右', '向下'];
+
+  /**
+   * @param {object} [options]
+   * @param {number} [options.base=1]   坐标起点，1 表示左上角为 (1,1)
+   * @param {string} [options.order='row']  箱子/目标点编号顺序：
+   *        'row' = 从左到右、从上到下（逐行）
+   *        'col' = 从左到右（先比 x，再比 y）
+   */
+  function describe(levelText, solution, options) {
+    options = options || {};
+    var base = options.base === 0 ? 0 : 1;
+    var order = options.order === 'col' ? 'col' : 'row';
+    var level = typeof levelText === 'string' ? parseLevel(levelText) : levelText;
+
+    if (typeof solution !== 'string') throw new Error('走法必须是字符串');
+
+    function xy(cell) { var x = cell % level.w; return { x: x, y: (cell - x) / level.w }; }
+
+    function numberCells(cells) {
+      return cells.slice().sort(function (a, b) {
+        var A = xy(a), B = xy(b);
+        return order === 'col' ? (A.x - B.x || A.y - B.y) : (A.y - B.y || A.x - B.x);
+      });
+    }
+
+    // 箱子编号：按初始位置排序后固定，跟着箱子走
+    var numbered = numberCells(level.boxes);
+    var boxes = level.boxes.slice();
+    var boxIds = boxes.map(function (cell) { return numbered.indexOf(cell) + 1; });
+    var boxSet = new Set(boxes);
+
+    // 目标点编号：同一套顺序
+    var allGoals = [];
+    for (var c = 0; c < level.n; c++) if (level.goals[c]) allGoals.push(c);
+    var goalNo = {};
+    numberCells(allGoals).forEach(function (cell, i) { goalNo[cell] = i + 1; });
+
+    function fmt(cell) {
+      var p = xy(cell);
+      return '（' + (p.x + base) + '，' + (p.y + base) + '）';
+    }
+
+    var player = level.player;
+    var segs = [];
+    var cur = null;
+
+    for (var s = 0; s < solution.length; s++) {
+      var ch = solution[s];
+      var lower = ch.toLowerCase();
+      var d = DIR_CHAR.indexOf(lower);
+      if (d === -1) throw new Error('走法里出现非法字符「' + ch + '」');
+      var isPush = ch !== lower;
+
+      var np = level.step(player, d);
+      if (np < 0 || level.walls[np]) throw new Error('第 ' + (s + 1) + ' 步撞墙');
+      var boxId = null, boxEnd = null;
+      if (boxSet.has(np)) {
+        var nd = level.step(np, d);
+        if (nd < 0 || level.walls[nd] || boxSet.has(nd)) throw new Error('第 ' + (s + 1) + ' 步推不动箱子');
+        var bi = boxes.indexOf(np);
+        boxId = boxIds[bi];
+        boxSet.delete(np); boxSet.add(nd);
+        boxes[bi] = nd;
+        boxEnd = nd;
+        isPush = true;
+      }
+      player = np;
+
+      // 走路段与推箱段一律分开：只要推箱性质变了就另起一段
+      var sameRun = cur && cur.dir === d && cur.push === isPush && cur.boxId === boxId;
+      if (!sameRun) {
+        if (cur) segs.push(cur);
+        cur = { dir: d, push: isPush, count: 0, boxId: boxId };
+      }
+      cur.count++;
+      cur.playerEnd = player;
+      if (boxEnd !== null) cur.boxEnd = boxEnd;
+    }
+    if (cur) segs.push(cur);
+
+    var parts = ['玩家起始位于' + fmt(level.player)];
+    segs.forEach(function (seg) {
+      var word = DIR_WORD[seg.dir];
+      if (seg.push) {
+        var boxGoal = (seg.boxEnd !== undefined && goalNo[seg.boxEnd] !== undefined)
+          ? '（目标点' + goalNo[seg.boxEnd] + '）'
+          : '';
+        parts.push(word + '推动箱子' + seg.boxId + ' ' + seg.count + '格后，玩家到达' + fmt(seg.playerEnd) + '，箱子' + seg.boxId + '移至' + fmt(seg.boxEnd) + boxGoal);
+      } else {
+        parts.push(word + '移动' + seg.count + '格后到达' + fmt(seg.playerEnd));
+      }
+    });
+
+    return {
+      text: parts.join('，') + '。',
+      segments: segs.length,
+      moves: solution.length
+    };
+  }
+
+
+  // ------------------------------------------------------- 最短路线说明 ----
+
+  /**
+   * 严格按固定四点模板生成“不存在更短路线的原因”。
+   *
+   * 说明：
+   *   - 箱子、目标点编号规则与 describe() 完全一致；
+   *   - 坐标默认为 1-based；
+   *   - 数字全部由当前地图与传入的最优走法自动提取；
+   *   - 不附加模板之外的自由发挥文字。
+   */
+  function explainOptimality(levelText, solution, options) {
+    options = options || {};
+    var base = options.base === 0 ? 0 : 1;
+    var order = options.order === 'col' ? 'col' : 'row';
+    var level = typeof levelText === 'string' ? parseLevel(levelText) : levelText;
+    if (typeof solution !== 'string' || !solution.length) throw new Error('走法必须是非空字符串');
+
+    function xy(cell) {
+      var x = cell % level.w;
+      return { x: x, y: (cell - x) / level.w };
+    }
+    function fmt(cell) {
+      var p = xy(cell);
+      return '（' + (p.x + base) + '，' + (p.y + base) + '）';
+    }
+    function numberCells(cells) {
+      return cells.slice().sort(function (a, b) {
+        var A = xy(a), B = xy(b);
+        return order === 'col' ? (A.x - B.x || A.y - B.y) : (A.y - B.y || A.x - B.x);
+      });
+    }
+    function chineseCount(n) {
+      var a = ['零', '一', '两', '三', '四', '五', '六', '七', '八', '九', '十'];
+      return n >= 0 && n <= 10 ? a[n] : String(n);
+    }
+    function dirWord(d) { return ['向左', '向上', '向右', '向下'][d]; }
+    function joinDirWords(runs) {
+      if (!runs.length) return '';
+      var words = runs.map(function (r) { return dirWord(r.dir); });
+      if (words.length === 1) return words[0];
+      if (words.length === 2) return words[0] + '再' + words[1];
+      return words.slice(0, -1).join('、') + '再' + words[words.length - 1];
+    }
+    function joinPushRunsForPoint1(runs) {
+      if (!runs.length) return '0格';
+      return runs.map(function (r, i) {
+        var w = (r.dir === 0 || r.dir === 2) ? '横向' : dirWord(r.dir);
+        return (i === 0 ? '' : '再') + w + r.count + '格';
+      }).join('、');
+    }
+    function expr(nums) {
+      return nums.length ? nums.join('＋') : '0';
+    }
+    function goalPositionLabel(cell) {
+      var p = xy(cell);
+      var cx = (level.w - 1) / 2, cy = (level.h - 1) / 2;
+      var h = p.x < cx - 0.25 ? '左' : (p.x > cx + 0.25 ? '右' : '');
+      var v = p.y < cy - 0.25 ? '上' : (p.y > cy + 0.25 ? '下' : '');
+      if (h && v) return h + v + '角';
+      if (h) return h + '侧';
+      if (v) return v + '方';
+      return '中间';
+    }
+
+    // 箱子按初始位置编号；身份在整个回放过程中保持不变。
+    var numberedBoxes = numberCells(level.boxes);
+    var boxes = level.boxes.slice();
+    var boxIds = boxes.map(function (cell) { return numberedBoxes.indexOf(cell) + 1; });
+    var boxSet = new Set(boxes);
+    var boxInfo = {};
+    for (var bi0 = 0; bi0 < boxes.length; bi0++) {
+      boxInfo[boxIds[bi0]] = {
+        id: boxIds[bi0], start: boxes[bi0], end: boxes[bi0], pushDirs: []
+      };
+    }
+
+    // 目标点编号。
+    var goals = [];
+    for (var gi0 = 0; gi0 < level.n; gi0++) if (level.goals[gi0]) goals.push(gi0);
+    var goalNo = {};
+    numberCells(goals).forEach(function (cell, i) { goalNo[cell] = i + 1; });
+
+    var player = level.player;
+    var walkRuns = [];
+    var currentWalk = 0;
+    var pushes = 0;
+
+    for (var si = 0; si < solution.length; si++) {
+      var ch = solution[si];
+      var lower = ch.toLowerCase();
+      var d = DIR_CHAR.indexOf(lower);
+      if (d === -1) throw new Error('走法里出现非法字符「' + ch + '」');
+      var np = level.step(player, d);
+      if (np < 0 || level.walls[np]) throw new Error('第 ' + (si + 1) + ' 步撞墙');
+
+      var actuallyPush = boxSet.has(np);
+      if (actuallyPush) {
+        if (currentWalk > 0) { walkRuns.push(currentWalk); currentWalk = 0; }
+        var nd = level.step(np, d);
+        if (nd < 0 || level.walls[nd] || boxSet.has(nd)) throw new Error('第 ' + (si + 1) + ' 步推不动箱子');
+        var bi = boxes.indexOf(np);
+        var id = boxIds[bi];
+        boxSet.delete(np); boxSet.add(nd);
+        boxes[bi] = nd;
+        boxInfo[id].end = nd;
+        boxInfo[id].pushDirs.push(d);
+        pushes++;
+      } else {
+        currentWalk++;
+      }
+      player = np;
+    }
+    if (currentWalk > 0) walkRuns.push(currentWalk);
+
+    // 校验确实通关，并整理每个箱子的最终目标与推动阶段。
+    var infos = Object.keys(boxInfo).map(function (k) { return boxInfo[k]; })
+      .sort(function (a, b) { return a.id - b.id; });
+    infos.forEach(function (info) {
+      if (!level.goals[info.end]) throw new Error('走法结束后箱子' + info.id + '没有到达目标点');
+      info.goal = goalNo[info.end];
+      info.goalCell = info.end;
+      var sp = xy(info.start), ep = xy(info.end);
+      info.manhattan = Math.abs(ep.x - sp.x) + Math.abs(ep.y - sp.y);
+      info.pushes = info.pushDirs.length;
+      info.extra = info.pushes - info.manhattan;
+      info.runs = [];
+      info.pushDirs.forEach(function (dir) {
+        var last = info.runs[info.runs.length - 1];
+        if (last && last.dir === dir) last.count++;
+        else info.runs.push({ dir: dir, count: 1 });
+      });
+    });
+
+    var totalWalk = solution.length - pushes;
+    var pushCounts = infos.map(function (i) { return i.pushes; });
+    var detour = infos.filter(function (i) { return i.extra > 0; });
+    var direct = infos.filter(function (i) { return i.extra <= 0; });
+
+    // 固定模板的第②点至少需要一个箱子承载“站位/转向”说明。
+    // 若本关没有额外推动，则选推动阶段最多的一个箱子放入②，其余放①。
+    if (!detour.length && infos.length) {
+      var special = infos.slice().sort(function (a, b) {
+        return b.runs.length - a.runs.length || b.pushes - a.pushes || b.id - a.id;
+      })[0];
+      detour = [special];
+      direct = infos.filter(function (i) { return i.id !== special.id; });
+    }
+
+    // 极端的一箱关卡：①仍需保持固定模板结构，因此用该箱子的最基本距离说明。
+    if (!direct.length && infos.length) direct = [infos[0]];
+
+    var p1clauses = direct.map(function (info) {
+      var movement = joinPushRunsForPoint1(info.runs);
+      return '箱子' + info.id + '从' + fmt(info.start) + '到目标点' + info.goal + '至少需要' + movement + '，共至少' + info.pushes + '次推动';
+    });
+
+    var p2clauses = detour.map(function (info) {
+      var counts = info.runs.map(function (r) { return r.count; });
+      var dirSeq = joinDirWords(info.runs.length > 1 ? info.runs.slice(1) : info.runs);
+      return '箱子' + info.id + '需要进入' + goalPositionLabel(info.goalCell) + '目标点' + info.goal + '。由于目标点' + info.goal + '周围墙体和可站立位置限制，箱子不能直接沿最短曼哈顿路线完成转向；为了获得后续' + dirSeq + '推动所需要的站位，至少需要完成' + expr(counts) + '＝' + info.pushes + '次推动';
+    });
+
+    var boxN = infos.length;
+    var total = solution.length;
+    var lines = [];
+    lines.push('不存在更短路线的原因：');
+    lines.push('① 在达到' + chineseCount(boxN) + '个目标点的可行最优分配中，' + p1clauses.join('；') + '。');
+    lines.push('② ' + p2clauses.join('；') + '。');
+    lines.push('③ 因此' + chineseCount(boxN) + '个箱子的推动次数下界为' + expr(pushCounts) + '＝' + pushes + '次。要完成这些必要推动方向的切换，玩家还必须绕到箱子的相应侧面；对应各阶段至少需要移动' + expr(walkRuns) + '＝' + totalWalk + '步，这些换位受到墙壁和其他箱子阻挡，无法直接省略。');
+    lines.push('④ 因而全部通关路线的总步数满足N≥' + pushes + '＋' + totalWalk + '＝' + total + '。上述路线实际包含' + pushes + '次推动和' + totalWalk + '次普通移动，共' + total + '步，恰好达到这一总步数下界，因此不存在' + (total - 1) + '步或更短的通关路线。');
+
+    return {
+      text: lines.join('\n'),
+      pushes: pushes,
+      walks: totalWalk,
+      moves: total,
+      walkRuns: walkRuns,
+      boxes: infos
+    };
+  }
+
+  return {
+    parseLevel: parseLevel,
+    solve: solve,
+    solveIter: solveIter,
+    replay: replay,
+    describe: describe,
+    explainOptimality: explainOptimality,
+    computeAlive: computeAlive,
+    computeDistToGoal: computeDistToGoal,
+    stateKey: stateKey,
+    DIR_CHAR: DIR_CHAR
+  };
+});
+
+</script>
+<script>
+(function () {
+  'use strict';
+  var S = window.PushboxSolver;
+  if (!S) { document.body.innerHTML = '<p style="padding:24px">solver.js 没有加载成功，请确认它和本文件在同一个目录。</p>'; return; }
+
+  // ------------------------------------------------------------- 状态 ----
+
+  var EXAMPLES = {
+    '两箱两目标': '########\n#  .   #\n#  $   #\n#@ $ . #\n########',
+    '绕路后连推': '#######\n#@    #\n# $   #\n#   . #\n#######',
+    '需要先绕到另一侧': '######\n#.   #\n# $  #\n#  @ #\n######',
+    '目标在角落': '#####\n#.  #\n# $ #\n# @ #\n#####',
+    '长走廊（4箱4目标）': '#########\n#  .  . #\n# $  $  #\n#@ $  $.#\n#   .   #\n#########',
+    '死角陷阱（无解）': '#####\n#@$ #\n#  .#\n#####',
+    '小房间': '#######\n#     #\n# .$  #\n#  @  #\n#######'
+  };
+
+  var st = {
+    w: 12, h: 10,
+    walls: new Uint8Array(12 * 10),
+    goals: new Uint8Array(12 * 10),
+    boxes: new Set(),
+    player: null,
+    tool: 'wall',
+    cell: 40,
+    undo: [], redo: [],
+    stroke: false,
+    preview: null,          // {player, boxes} 回放时覆盖显示
+    play: { steps: null, index: 0, timer: null, speed: 7 },
+    solving: null,
+    solution: null,
+    solvedMap: null,       // 破解时用的地图文本，用于生成解题过程
+    solvedMode: null       // 最后一条解的最优模式
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var canvas = $('board');
+  var ctx = canvas.getContext('2d');
+
+  function idx(x, y) { return y * st.w + x; }
+  function inGrid(x, y) { return x >= 0 && y >= 0 && x < st.w && y < st.h; }
+  function pt(i) { var x = i % st.w; return { x: x, y: (i - x) / st.w }; }
+
+  // ------------------------------------------------------- 撤销 / 快照 ----
+
+  function snapshot() {
+    return {
+      w: st.w, h: st.h,
+      walls: st.walls.slice(),
+      goals: st.goals.slice(),
+      boxes: new Set(st.boxes),
+      player: st.player
+    };
+  }
+  function restore(s) {
+    st.w = s.w; st.h = s.h;
+    st.walls = s.walls.slice();
+    st.goals = s.goals.slice();
+    st.boxes = new Set(s.boxes);
+    st.player = s.player;
+    $('gw').value = st.w; $('gh').value = st.h;
+    draw();
+  }
+  function pushUndo() {
+    st.undo.push(snapshot());
+    if (st.undo.length > 200) st.undo.shift();
+    st.redo.length = 0;
+    updateUndoButtons();
+  }
+  function updateUndoButtons() {
+    $('undo').disabled = st.undo.length === 0;
+    $('redo').disabled = st.redo.length === 0;
+  }
+  function doUndo() {
+    if (!st.undo.length) return;
+    st.redo.push(snapshot());
+    restore(st.undo.pop());
+    updateUndoButtons();
+  }
+  function doRedo() {
+    if (!st.redo.length) return;
+    st.undo.push(snapshot());
+    restore(st.redo.pop());
+    updateUndoButtons();
+  }
+
+  // ------------------------------------------------------------- 绘制 ----
+
+  function fitCanvas() {
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = st.w * st.cell * dpr;
+    canvas.height = st.h * st.cell * dpr;
+    canvas.style.width = (st.w * st.cell) + 'px';
+    canvas.style.height = (st.h * st.cell) + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  function currentScene() {
+    if (st.preview) return { player: st.preview.player, boxes: st.preview.boxes };
+    return { player: st.player, boxes: st.boxes };
+  }
+
+  function draw() {
+    var c = st.cell;
+    var scene = currentScene();
+    var boxSet = scene.boxes instanceof Set ? scene.boxes : new Set(scene.boxes);
+
+    ctx.clearRect(0, 0, st.w * c, st.h * c);
+
+    // 地板 + 目标点
+    for (var y = 0; y < st.h; y++) {
+      for (var x = 0; x < st.w; x++) {
+        var i = idx(x, y);
+        var px = x * c, py = y * c;
+        if (st.walls[i]) {
+          ctx.fillStyle = '#3d4658';
+          ctx.fillRect(px, py, c, c);
+          ctx.fillStyle = '#4d586d';
+          ctx.fillRect(px, py, c, Math.max(2, c * 0.09));
+          ctx.strokeStyle = '#2a303c';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + .5, py + .5, c - 1, c - 1);
+        } else {
+          ctx.fillStyle = '#171a21';
+          ctx.fillRect(px, py, c, c);
+          ctx.strokeStyle = '#20242e';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + .5, py + .5, c - 1, c - 1);
+        }
+        if (st.goals[i] && !st.walls[i]) {
+          ctx.beginPath();
+          ctx.arc(px + c / 2, py + c / 2, c * 0.16, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(240,166,58,.85)';
+          ctx.fill();
+        }
+      }
+    }
+
+    // 箱子
+    boxSet.forEach(function (i) {
+      var p = pt(i), px = p.x * c, py = p.y * c;
+      var onGoal = !!st.goals[i];
+      var pad = c * 0.12;
+      ctx.fillStyle = onGoal ? '#49d38b' : '#c98a52';
+      roundRect(ctx, px + pad, py + pad, c - pad * 2, c - pad * 2, Math.max(2, c * 0.13));
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.35)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.30)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(px + pad * 1.7, py + pad * 1.7);
+      ctx.lineTo(px + c - pad * 1.7, py + c - pad * 1.7);
+      ctx.moveTo(px + c - pad * 1.7, py + pad * 1.7);
+      ctx.lineTo(px + pad * 1.7, py + c - pad * 1.7);
+      ctx.stroke();
+    });
+
+    // 小人
+    if (scene.player !== null && scene.player !== undefined && scene.player >= 0) {
+      var pp = pt(scene.player), cx = pp.x * c + c / 2, cy = pp.y * c + c / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, c * 0.30, 0, Math.PI * 2);
+      ctx.fillStyle = '#59ecff';
+      ctx.fill();
+      ctx.strokeStyle = '#0d3b45';
+      ctx.lineWidth = Math.max(1.5, c * 0.05);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx - c * 0.095, cy - c * 0.06, c * 0.045, 0, Math.PI * 2);
+      ctx.arc(cx + c * 0.095, cy - c * 0.06, c * 0.045, 0, Math.PI * 2);
+      ctx.fillStyle = '#0d3b45';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy + c * 0.06, c * 0.115, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.lineWidth = Math.max(1.4, c * 0.045);
+      ctx.strokeStyle = '#0d3b45';
+      ctx.stroke();
+    }
+
+    // 回放高亮：上一步推动的箱子
+    if (st.preview && st.preview.highlight !== undefined && st.preview.highlight !== null) {
+      var hp = pt(st.preview.highlight);
+      ctx.strokeStyle = '#ffe066';
+      ctx.lineWidth = Math.max(2, c * 0.07);
+      roundRect(ctx, hp.x * c + 2, hp.y * c + 2, c - 4, c - 4, Math.max(2, c * 0.13));
+      ctx.stroke();
+    }
+  }
+
+  // --------------------------------------------------------- 编辑操作 ----
+
+  function setWall(i, on) {
+    st.walls[i] = on ? 1 : 0;
+    if (on) { st.goals[i] = 0; st.boxes.delete(i); if (st.player === i) st.player = null; }
+  }
+  function toggleGoal(i) { st.goals[i] = st.goals[i] ? 0 : 1; if (st.goals[i]) setWall(i, false); }
+  function toggleBox(i) {
+    if (st.walls[i]) return;
+    if (st.boxes.has(i)) st.boxes.delete(i); else { st.boxes.add(i); if (st.player === i) st.player = null; }
+  }
+  function setPlayer(i) {
+    if (st.walls[i]) return;
+    if (st.player === i) { st.player = null; return; }
+    st.boxes.delete(i);
+    st.player = i;
+  }
+  function eraseCell(i) { st.walls[i] = 0; st.goals[i] = 0; st.boxes.delete(i); if (st.player === i) st.player = null; }
+
+  function paintAt(x, y, erase) {
+    if (!inGrid(x, y)) return;
+    var i = idx(x, y);
+    if (erase) { eraseCell(i); return; }
+    switch (st.tool) {
+      case 'wall': setWall(i, !st.walls[i]); break;
+      case 'floor': setWall(i, false); break;
+      case 'goal': toggleGoal(i); break;
+      case 'box': toggleBox(i); break;
+      case 'player': setPlayer(i); break;
+      case 'erase': eraseCell(i); break;
+    }
+  }
+
+  function eventCell(e) {
+    var r = canvas.getBoundingClientRect();
+    var x = Math.floor((e.clientX - r.left) / st.cell);
+    var y = Math.floor((e.clientY - r.top) / st.cell);
+    return { x: x, y: y };
+  }
+
+  // --------------------------------------------------------- 文本转换 ----
+
+  function contentBounds() {
+    var minX = st.w, minY = st.h, maxX = -1, maxY = -1;
+    for (var y = 0; y < st.h; y++) {
+      for (var x = 0; x < st.w; x++) {
+        var i = idx(x, y);
+        if (st.walls[i] || st.goals[i] || st.boxes.has(i) || st.player === i) {
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return null;
+    return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+  }
+
+  function exportText() {
+    var b = contentBounds();
+    if (!b) return '';
+    var out = [];
+    for (var y = b.minY; y <= b.maxY; y++) {
+      var row = '';
+      for (var x = b.minX; x <= b.maxX; x++) {
+        var i = idx(x, y);
+        if (st.walls[i]) row += '#';
+        else if (st.boxes.has(i) && st.goals[i]) row += '*';
+        else if (st.player === i && st.goals[i]) row += '+';
+        else if (st.boxes.has(i)) row += '$';
+        else if (st.player === i) row += '@';
+        else if (st.goals[i]) row += '.';
+        else row += '-';
+      }
+      out.push(row);
+    }
+    return out.join('\n');
+  }
+
+  function loadText(text) {
+    var lv = S.parseLevel(text);              // 解析失败会抛错，由调用方捕获
+    pushUndo();
+    var w = Math.max(lv.w, 8), h = Math.max(lv.h, 8);
+    st.w = w; st.h = h;
+    st.walls = new Uint8Array(w * h);
+    st.goals = new Uint8Array(w * h);
+    st.boxes = new Set();
+    for (var y = 0; y < lv.h; y++) {
+      for (var x = 0; x < lv.w; x++) {
+        var src = y * lv.w + x, dst = y * w + x;
+        if (lv.walls[src]) st.walls[dst] = 1;
+        if (lv.goals[src]) st.goals[dst] = 1;
+      }
+    }
+    lv.boxes.forEach(function (c) { var p = pt2(c, lv.w); st.boxes.add(p.y * w + p.x); });
+    var pl = pt2(lv.player, lv.w);
+    st.player = pl.y * w + pl.x;
+
+    $('gw').value = w; $('gh').value = h;
+    $('mapText').value = lv.toText();
+    resetPlayback();
+    st.solution = null;
+    $('answer').textContent = '';
+    setStats({});
+    fitCanvas(); draw();
+    setStatus('已载入：' + lv.w + '×' + lv.h + '，' + lv.boxes.length + ' 个箱子', 'ok');
+  }
+  function pt2(i, w) { var x = i % w; return { x: x, y: (i - x) / w }; }
+
+  function resizeGrid(w, h) {
+    pushUndo();
+    var nw = new Uint8Array(w * h), ng = new Uint8Array(w * h), nb = new Set();
+    for (var y = 0; y < Math.min(h, st.h); y++) {
+      for (var x = 0; x < Math.min(w, st.w); x++) {
+        nw[y * w + x] = st.walls[y * st.w + x];
+        ng[y * w + x] = st.goals[y * st.w + x];
+        if (st.boxes.has(y * st.w + x)) nb.add(y * w + x);
+      }
+    }
+    var np = null;
+    if (st.player !== null) { var p = pt(st.player); if (p.x < w && p.y < h) np = p.y * w + p.x; }
+    st.w = w; st.h = h; st.walls = nw; st.goals = ng; st.boxes = nb; st.player = np;
+    $('gw').value = w; $('gh').value = h;
+    resetPlayback(); fitCanvas(); draw();
+  }
+
+  function trimGrid() {
+    var b = contentBounds();
+    if (!b) { setStatus('网格里什么都没有，无需裁剪', 'err'); return; }
+    var w = b.maxX - b.minX + 1, h = b.maxY - b.minY + 1;
+    pushUndo();
+    var nw = new Uint8Array(w * h), ng = new Uint8Array(w * h), nb = new Set();
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var s = (y + b.minY) * st.w + (x + b.minX), d = y * w + x;
+        nw[d] = st.walls[s]; ng[d] = st.goals[s];
+        if (st.boxes.has(s)) nb.add(d);
+      }
+    }
+    var np = null;
+    if (st.player !== null) { var p = pt(st.player); np = (p.y - b.minY) * w + (p.x - b.minX); }
+    st.w = w; st.h = h; st.walls = nw; st.goals = ng; st.boxes = nb; st.player = np;
+    $('gw').value = w; $('gh').value = h;
+    resetPlayback(); fitCanvas(); draw();
+    setStatus('已裁剪到 ' + w + '×' + h, 'ok');
+  }
+
+  function clearAll() {
+    pushUndo();
+    st.walls = new Uint8Array(st.w * st.h);
+    st.goals = new Uint8Array(st.w * st.h);
+    st.boxes = new Set();
+    st.player = null;
+    resetPlayback(); draw();
+    setStatus('已清空', 'ok');
+  }
+
+  // --------------------------------------------------------- 破解流程 ----
+
+  function setStatus(msg, kind) {
+    var el = $('solveStatus');
+    el.textContent = msg;
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+  function setStats(o) {
+    $('stMoves').textContent = o.moves === undefined ? '–' : o.moves;
+    $('stPushes').textContent = o.pushes === undefined ? '–' : o.pushes;
+    $('stNodes').textContent = o.nodes === undefined ? '–' : o.nodes;
+    $('stTime').textContent = o.time === undefined ? '–' : o.time;
+  }
+
+  function cancelSolve() {
+    if (st.solving && st.solving.raf) cancelAnimationFrame(st.solving.raf);
+    st.solving = null;
+    $('cancel').disabled = true;
+    $('solve').disabled = false;
+    $('solveBar').style.width = '0%';
+  }
+
+  /** 生成/刷新自然语言的解题过程 */
+  function refreshDesc() {
+    var el = $('desc');
+    if (!st.solution || !st.solvedMap) { el.textContent = ''; return; }
+    try {
+      var d = S.describe(st.solvedMap, st.solution, { base: 1, order: $('order').value });
+      el.textContent = d.text;
+    } catch (e) {
+      el.textContent = '生成解题过程失败：' + e.message;
+    }
+  }
+
+  /** 严格按固定四点模板生成“不存在更短路线的原因”。仅最少步数模式显示。 */
+  function refreshOptimality() {
+    var el = $('optimality');
+    if (!st.solution || !st.solvedMap || st.solvedMode !== 'moves') { el.textContent = ''; return; }
+    try {
+      var d = S.explainOptimality(st.solvedMap, st.solution, { base: 1, order: $('order').value });
+      el.textContent = d.text;
+    } catch (e) {
+      el.textContent = '';
+    }
+  }
+
+  function startSolve() {
+    var text = exportText();
+    if (!text) { setStatus('网格是空的，先画点东西', 'err'); return; }
+    var level;
+    try { level = S.parseLevel(text); }
+    catch (e) { setStatus(e.message, 'err'); return; }
+
+    cancelSolve();
+    resetPlayback();
+    $('answer').textContent = '';
+    $('desc').textContent = '';
+    $('optimality').textContent = '';
+    st.solution = null;
+    st.solvedMode = null;
+    st.solvedMap = text;      // 记下破解用的地图，解题过程要用它
+    setStats({});
+
+    var mode = document.querySelector('input[name=mode]:checked').value;
+    var it = S.solveIter(level, mode, { maxNodes: 20000000, maxMillis: 90000, yieldEvery: 900 });
+
+    st.solving = { it: it, raf: 0, t0: performance.now(), last: { explored: 0 }, mode: mode };
+    $('solve').disabled = true;
+    $('cancel').disabled = false;
+    setStatus('搜索中…');
+    $('solveBar').style.width = '3%';
+    st.solving.raf = requestAnimationFrame(tickSolve);
+  }
+
+  function tickSolve() {
+    var s = st.solving;
+    if (!s) return;
+    var deadline = performance.now() + 12;
+    var r = null;
+    do {
+      r = s.it.next();
+      if (!r.done && r.value) s.last = r.value;
+      if (r.done) break;
+    } while (performance.now() < deadline);
+
+    if (!r.done) {
+      var secs = ((performance.now() - s.t0) / 1000).toFixed(1);
+      setStatus('搜索中… 已展开 ' + s.last.explored.toLocaleString() + ' 个状态，用时 ' + secs + ' 秒');
+      var pct = Math.min(97, 3 + Math.log10(Math.max(10, s.last.explored)) * 11);
+      $('solveBar').style.width = pct + '%';
+      s.raf = requestAnimationFrame(tickSolve);
+      return;
+    }
+
+    var res = r.value;
+    cancelSolve();
+
+    if (!res || !res.ok) {
+      setStatus(res ? res.message : '搜索失败', 'err');
+      $('solveBar').style.width = '100%';
+      $('solveBar').style.background = 'var(--bad)';
+      setTimeout(function () { $('solveBar').style.background = 'var(--accent)'; }, 1200);
+      return;
+    }
+
+    $('solveBar').style.width = '100%';
+    st.solution = res.solution;
+    st.solvedMode = res.mode;
+    $('answer').textContent = res.solution;
+    refreshDesc();
+    refreshOptimality();
+    setStats({
+      moves: res.moves, pushes: res.pushes,
+      nodes: res.explored.toLocaleString(),
+      time: res.elapsed + ' ms'
+    });
+    setStatus('✔ 找到最优解：' + res.moves + ' 步 / ' + res.pushes + ' 推'
+      + (res.mode === 'pushes' ? '（推箱数最少）' : '（步数最少）'), 'ok');
+
+    preparePlayback(res.solution);
+  }
+
+  // ------------------------------------------------------------- 回放 ----
+
+  function resetPlayback() {
+    if (st.play.timer) { clearInterval(st.play.timer); st.play.timer = null; }
+    st.play.steps = null;
+    st.play.index = 0;
+    st.preview = null;
+    $('pbPlay').textContent = '▶ 播放';
+    $('scrub').max = 0; $('scrub').value = 0;
+    $('pbLabel').textContent = '0 / 0';
+    ['pbReset', 'pbPrev', 'pbPlay', 'pbNext', 'pbEnd'].forEach(function (id) { $(id).disabled = true; });
+    draw();
+  }
+
+  function preparePlayback(solution) {
+    var text = exportText();
+    var rep;
+    try { rep = S.replay(text, solution); }
+    catch (e) { setStatus('回放准备失败：' + e.message, 'err'); return; }
+
+    if (!rep.ok) { setStatus('解无法回放：' + rep.message, 'err'); return; }
+    if (!rep.solved) { setStatus('这段解走完并没有通关', 'err'); return; }
+
+    if (st.play.timer) { clearInterval(st.play.timer); st.play.timer = null; }
+    st.play.steps = rep.steps;
+    st.play.index = 0;
+    $('pbPlay').textContent = '▶ 播放';
+    $('scrub').max = rep.steps.length - 1;
+    $('scrub').value = 0;
+    ['pbReset', 'pbPrev', 'pbPlay', 'pbNext', 'pbEnd'].forEach(function (id) { $(id).disabled = false; });
+    showStep(0);
+  }
+
+  function showStep(i) {
+    var steps = st.play.steps;
+    if (!steps) return;
+    i = Math.max(0, Math.min(steps.length - 1, i));
+    st.play.index = i;
+    var s = steps[i];
+    st.preview = { player: s.player, boxes: new Set(s.boxes), highlight: null };
+
+    // 高亮这一步被推动的箱子：与上一步的箱子集合做差集
+    if (i > 0 && s.pushed) {
+      var prev = new Set(steps[i - 1].boxes);
+      var moved = null;
+      st.preview.boxes.forEach(function (c) { if (!prev.has(c)) moved = c; });
+      st.preview.highlight = moved;
+    }
+
+    $('scrub').value = i;
+    $('pbLabel').textContent = i + ' / ' + (steps.length - 1);
+    $('pbPrev').disabled = i === 0;
+    $('pbReset').disabled = i === 0;
+    $('pbNext').disabled = i === steps.length - 1;
+    $('pbEnd').disabled = i === steps.length - 1;
+    draw();
+  }
+
+  function togglePlay() {
+    if (!st.play.steps) return;
+    if (st.play.timer) {
+      clearInterval(st.play.timer); st.play.timer = null;
+      $('pbPlay').textContent = '▶ 播放';
+      return;
+    }
+    if (st.play.index >= st.play.steps.length - 1) showStep(0);
+    $('pbPlay').textContent = '⏸ 暂停';
+    var interval = Math.max(30, 1000 / st.play.speed);
+    st.play.timer = setInterval(function () {
+      if (st.play.index >= st.play.steps.length - 1) {
+        clearInterval(st.play.timer); st.play.timer = null;
+        $('pbPlay').textContent = '▶ 播放';
+        return;
+      }
+      showStep(st.play.index + 1);
+    }, interval);
+  }
+
+  // ------------------------------------------------------------- 事件 ----
+
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  canvas.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 && e.button !== 2) return;
+    canvas.setPointerCapture(e.pointerId);
+    st.stroke = true;
+    pushUndo();
+    var c = eventCell(e);
+    paintAt(c.x, c.y, e.button === 2);
+    draw();
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!st.stroke) return;
+    var c = eventCell(e);
+    paintAt(c.x, c.y, (e.buttons & 2) === 2);
+    draw();
+  });
+  ['pointerup', 'pointercancel'].forEach(function (ev) {
+    canvas.addEventListener(ev, function () { st.stroke = false; });
+  });
+
+  $('tools').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tool]');
+    if (!b) return;
+    st.tool = b.dataset.tool;
+    Array.prototype.forEach.call($('tools').querySelectorAll('button'), function (x) {
+      x.classList.toggle('on', x === b);
+    });
+  });
+
+  $('undo').addEventListener('click', doUndo);
+  $('redo').addEventListener('click', doRedo);
+  $('clear').addEventListener('click', clearAll);
+  $('applySize').addEventListener('click', function () {
+    var w = Math.max(3, Math.min(60, parseInt($('gw').value, 10) || st.w));
+    var h = Math.max(3, Math.min(60, parseInt($('gh').value, 10) || st.h));
+    resizeGrid(w, h);
+  });
+  $('cell').addEventListener('input', function () {
+    st.cell = parseInt($('cell').value, 10);
+    fitCanvas(); draw();
+  });
+  $('trim').addEventListener('click', trimGrid);
+
+  $('export').addEventListener('click', function () {
+    var t = exportText();
+    if (!t) { setStatus('网格是空的', 'err'); return; }
+    $('mapText').value = t;
+    setStatus('已生成地图文本', 'ok');
+  });
+  $('load').addEventListener('click', function () {
+    try { loadText($('mapText').value); }
+    catch (e) { setStatus(e.message, 'err'); }
+  });
+  $('copyMap').addEventListener('click', function () {
+    var t = $('mapText').value;
+    if (!t) { setStatus('地图文本是空的', 'err'); return; }
+    copy(t, '地图文本已复制');
+  });
+  $('copyAnswer').addEventListener('click', function () {
+    if (!st.solution) { setStatus('还没有解', 'err'); return; }
+    copy(st.solution, '走法已复制');
+  });
+  $('copyDesc').addEventListener('click', function () {
+    var t = $('desc').textContent;
+    if (!t) { setStatus('还没有解题过程', 'err'); return; }
+    copy(t, '解题过程已复制');
+  });
+  $('copyOptimality').addEventListener('click', function () {
+    var t = $('optimality').textContent;
+    if (!t) { setStatus('还没有不存在更短路线的原因', 'err'); return; }
+    copy(t, '不存在更短路线的原因已复制');
+  });
+  $('order').addEventListener('change', function () { refreshDesc(); refreshOptimality(); });
+  $('toMoves').addEventListener('click', function () {
+    if (!st.solution) { setStatus('还没有解', 'err'); return; }
+    $('mapText').value = exportText() + '\n\n' + st.solution;
+    setStatus('已把解附加到地图文本后面', 'ok');
+  });
+
+  var sel = $('example');
+  Object.keys(EXAMPLES).forEach(function (k) {
+    var o = document.createElement('option');
+    o.value = k; o.textContent = k;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', function () {
+    var t = EXAMPLES[sel.value];
+    if (!t) return;
+    try { loadText(t); } catch (e) { setStatus(e.message, 'err'); }
+  });
+
+  $('solve').addEventListener('click', startSolve);
+  $('cancel').addEventListener('click', function () { cancelSolve(); setStatus('已中止'); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function (r) {
+    r.addEventListener('change', function () {
+      $('modeTag').textContent = r.value === 'pushes' ? '模式：最少推箱数' : '模式：最少步数';
+    });
+  });
+
+  $('pbReset').addEventListener('click', function () { showStep(0); });
+  $('pbPrev').addEventListener('click', function () { showStep(st.play.index - 1); });
+  $('pbNext').addEventListener('click', function () { showStep(st.play.index + 1); });
+  $('pbEnd').addEventListener('click', function () { if (st.play.steps) showStep(st.play.steps.length - 1); });
+  $('pbPlay').addEventListener('click', togglePlay);
+  $('scrub').addEventListener('input', function () {
+    if (st.play.timer) { clearInterval(st.play.timer); st.play.timer = null; $('pbPlay').textContent = '▶ 播放'; }
+    showStep(parseInt($('scrub').value, 10));
+  });
+  $('speed').addEventListener('input', function () {
+    st.play.speed = parseInt($('speed').value, 10);
+    if (st.play.timer) { togglePlay(); togglePlay(); }
+  });
+
+  function copy(text, okMsg) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); setStatus(okMsg, 'ok'); }
+      catch (e) { setStatus('复制失败，请手动选中', 'err'); }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { setStatus(okMsg, 'ok'); }, fallback);
+    } else fallback();
+  }
+
+  window.addEventListener('keydown', function (e) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); doRedo(); return; }
+    if (e.key === 'Enter' && st.play.steps) { e.preventDefault(); togglePlay(); return; }
+    if (e.key === ' ') { e.preventDefault(); togglePlay(); return; }
+
+    var d = { ArrowLeft: 0, ArrowUp: 1, ArrowRight: 2, ArrowDown: 3 }[e.key];
+    if (d === undefined) return;
+    e.preventDefault();
+    if (st.preview) { st.preview = null; resetPlayback(); }
+    walk(d);
+  });
+
+  function walk(d) {
+    var DX = [-1, 0, 1, 0], DY = [0, -1, 0, 1];
+    if (st.player === null) return;
+    var w = st.w, h = st.h;
+    var p = pt(st.player);
+    var nx = p.x + DX[d], ny = p.y + DY[d];
+    if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+    var ni = idx(nx, ny);
+    if (st.walls[ni]) return;
+    if (st.boxes.has(ni)) {
+      var bx = nx + DX[d], by = ny + DY[d];
+      if (bx < 0 || by < 0 || bx >= w || by >= h) return;
+      var bi = idx(bx, by);
+      if (st.walls[bi] || st.boxes.has(bi)) return;
+      st.boxes.delete(ni); st.boxes.add(bi);
+    }
+    st.player = ni;
+    draw();
+  }
+
+  // ------------------------------------------------------------- 启动 ----
+
+  function boot() {
+    $('modeTag').textContent = '模式：最少步数';
+    var start = EXAMPLES['两箱两目标'];
+    $('example').value = '两箱两目标';
+    try { loadText(start); }
+    catch (e) { fitCanvas(); draw(); }
+    // 首次自动载入不算用户操作，清掉历史，避免"撤销"一键清空整个网格
+    st.undo.length = 0;
+    st.redo.length = 0;
+    updateUndoButtons();
+    fitCanvas(); draw();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
